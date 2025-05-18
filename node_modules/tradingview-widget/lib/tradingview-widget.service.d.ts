@@ -1,0 +1,6 @@
+import * as i0 from "@angular/core";
+export declare class TradingviewWidgetService {
+    constructor();
+    static ɵfac: i0.ɵɵFactoryDeclaration<TradingviewWidgetService, never>;
+    static ɵprov: i0.ɵɵInjectableDeclaration<TradingviewWidgetService>;
+}

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Crypto Chart - Realtime</title>
+    <script src="https://unpkg.com/lightweight-charts@3.4.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Custom styles for chart */
+      #chart {
+        width: 100vw;
+        height: 100vh;
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+
+      #chart::after {
+        content: "DeCym Capital";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-0deg);
+        font-size: 80px;
+        font-weight: bold;
+        color: rgba(255, 255, 255, 0.05);
+        pointer-events: none;
+        user-select: none;
+        z-index: 1;
+      }
+
+      #loading {
+        display: none; /* Default hidden */
+        z-index: 100;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .animate-spin {
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .animate-pulse {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+
+      /* Tambahkan media queries */
+      @media (max-width: 640px) {
+        #chart {
+          height: 80vh;
+        }
+
+        .fixed.top-6.left-6 {
+          min-width: 180px;
+          padding: 0.5rem;
+        }
+
+        .fixed.bottom-4 {
+          font-size: 0.875rem;
+        }
+      }
+    </style>
+    <!-- Update path pairs.js -->
+    <script src="/pairs.js"></script>
+  </head>
+  <body class="bg-gray-900 text-white">
+    <!-- Floating menu -->
+    <div
+      class="fixed top-6 left-6 z-50 bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-lg p-4 border border-gray-700 min-w-[220px] transition-all duration-300 ease-in-out"
+      id="floating-menu"
+    >
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-yellow-400 font-medium">Menu</span>
+        <button
+          id="toggle-menu"
+          class="px-2 py-1 bg-gray-700 rounded-md hover:bg-gray-600 transition-colors"
+        >
+          <svg
+            id="menu-hide-icon"
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 9l-7 7-7-7"
+            ></path>
+          </svg>
+          <svg
+            id="menu-show-icon"
+            class="w-4 h-4 hidden"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M5 15l7-7 7 7"
+            ></path>
+          </svg>
+        </button>
+      </div>
+      <div id="menu-content">
+        <label class="block text-sm font-medium text-yellow-400 mb-1"
+          >Pair</label
+        >
+        <div class="flex gap-2">
+          <input
+            list="pair-suggestions"
+            id="pair-select"
+            class="w-full px-3 py-2 bg-gray-700 rounded-md text-sm text-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all"
+            placeholder="Cari pair..."
+          />
+          <button
+            id="pair-button"
+            class="px-4 py-2 bg-yellow-400 text-gray-900 rounded-md hover:bg-yellow-500 transition-colors"
+          >
+            Pilih
+          </button>
+        </div>
+        <datalist id="pair-suggestions"></datalist>
+        <label class="block text-sm font-medium text-yellow-400 mb-1"
+          >Interval</label
+        >
+        <select
+          id="interval-select"
+          class="w-full px-3 py-2 bg-gray-700 rounded-md text-sm text-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all"
+        >
+          <option value="1m">1m</option>
+          <option value="5m">5m</option>
+          <option value="15m" selected>15m</option>
+          <option value="30m">30m</option>
+          <option value="4h">4h</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div id="chart">
+      <div
+        id="loading"
+        class="absolute inset-0 flex items-center justify-center bg-gray-900/90 backdrop-blur-sm"
+      >
+        <div
+          class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-400"
+        ></div>
+      </div>
+    </div>
+
+    <!-- Pair Active -->
+    <div
+      class="fixed top-6 right-6 z-50 bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-lg p-4 border border-gray-700"
+    >
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+        <span class="text-sm font-medium text-yellow-400">Pair Aktif:</span>
+        <span id="active-pair" class="text-sm font-bold text-white">-</span>
+      </div>
+    </div>
+
+    <!-- Signal info -->
+    <div
+      class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-gray-800/50 backdrop-blur-sm rounded-lg px-4 py-3 border border-gray-700 text-sm text-center max-w-[90%]"
+    >
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-yellow-400 font-medium">Informasi Sinyal</span>
+        <button
+          id="toggle-info"
+          class="px-2 py-1 bg-gray-700/50 rounded-md hover:bg-gray-600/50 transition-colors"
+        >
+          <svg
+            id="hide-icon"
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 9l-7 7-7-7"
+            ></path>
+          </svg>
+          <svg
+            id="show-icon"
+            class="w-4 h-4 hidden"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M5 15l7-7 7 7"
+            ></path>
+          </svg>
+        </button>
+      </div>
+      <div id="info-content">
+        <strong class="text-green-400">BUY</strong>: Sinyal beli (potensi harga
+        naik). <br />
+        <strong class="text-red-700">SELL</strong>: Sinyal jual (potensi harga
+        turun).<br />
+        <strong class="text-yellow-400">*BUY / *SELL</strong>: Sinyal Spekulasi.
+        <div class="mt-2 text-xs text-red-500">
+          Perhatian: Trading mengandung risiko tinggi. Anda bisa kehilangan
+          seluruh modal Anda. Pastikan Anda memahami risiko sebelum melakukan
+          trading.
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const socket = new WebSocket("ws://localhost:8080");
+      const pairSel = document.getElementById("pair-select");
+      const intSel = document.getElementById("interval-select");
+      let chart, candleSeries, ctLine, ltLine, utLine;
+      const candles = [];
+      let priceLine = null,
+        countdownTimer = null;
+
+      const intToSec = (i) => {
+        const n = parseInt(i),
+          u = i.at(-1);
+        return n * ({ m: 60, h: 3600, d: 86400 }[u] || 60);
+      };
+
+      const fmtTimeLeft = (s) => {
+        const m = String(Math.floor(s / 60)).padStart(2, "0");
+        const sc = String(s % 60).padStart(2, "0");
+        return `${m}:${sc}`;
+      };
+
+      function initChart() {
+        const div = document.getElementById("chart");
+        div.innerHTML = "";
+        chart = LightweightCharts.createChart(div, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          layout: { backgroundColor: "#181A1F", textColor: "#fff" },
+          grid: { vertLines: { color: "#444" }, horzLines: { color: "#444" } },
+          priceScale: { borderColor: "#555" },
+          timeScale: {
+            borderColor: "#555",
+            barSpacing: 15,
+            minBarSpacing: 10,
+            timeVisible: true, // Menampilkan waktu
+            secondsVisible: false, // Menyembunyikan detik
+            tickMarkFormatter: (time, tickMarkType, locale) => {
+              const date = new Date(time * 1000);
+              return date.toLocaleTimeString(locale, {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            },
+          },
+        });
+        candleSeries = chart.addCandlestickSeries();
+        ctLine = chart.addLineSeries({ color: "blue", lineWidth: 2 });
+        ltLine = chart.addLineSeries({ color: "orange", lineWidth: 2 });
+        utLine = chart.addLineSeries({ color: "purple", lineWidth: 2 });
+      }
+
+      function startCountdown(closeTsMs, lastPrice) {
+        if (countdownTimer) clearInterval(countdownTimer);
+        if (priceLine) candleSeries.removePriceLine(priceLine);
+
+        countdownTimer = setInterval(() => {
+          const secLeft = Math.max(
+            0,
+            Math.floor((closeTsMs - Date.now()) / 1000)
+          );
+          if (priceLine) candleSeries.removePriceLine(priceLine);
+
+          priceLine = candleSeries.createPriceLine({
+            price: lastPrice,
+            color: "#26a69a",
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: `⏱ ${fmtTimeLeft(secLeft)}`,
+          });
+
+          if (secLeft === 0) {
+            clearInterval(countdownTimer);
+            window.location.reload(); // Tambahkan baris ini untuk reload otomatis
+          }
+        }, 1000);
+      }
+
+      async function loadChartData() {
+        const pair = pairSel.value,
+          interval = intSel.value;
+        try {
+          // Tampilkan loading
+          const loadingElement = document.getElementById("loading");
+          if (loadingElement) {
+            loadingElement.style.display = "flex"; // Gunakan display untuk memastikan visibility
+          }
+          document.getElementById("active-pair").textContent = pair;
+
+          const r = await fetch(`/data?pair=${pair}&interval=${interval}`);
+          if (!r.ok) throw new Error("fetch fail");
+          const j = await r.json();
+
+          // Sembunyikan loading
+          if (loadingElement) {
+            loadingElement.style.display = "none";
+          }
+
+          candles.length = 0;
+          j.kline.forEach((e) => {
+            const timestamp =
+              interval === "1m"
+                ? Math.floor(e.Date / 1000 / 60) * 60 // Bulatkan ke menit terdekat untuk 1m
+                : e.Date / 1000; // Gunakan timestamp asli untuk interval lainnya
+
+            candles.push({
+              time: timestamp,
+              open: e.Open,
+              high: e.High,
+              low: e.Low,
+              close: e.Close,
+            });
+          });
+          candleSeries.setData(candles);
+          ctLine.setData(
+            j.kline.map((e) => ({ time: e.Date / 1000, value: e.CT }))
+          );
+          ltLine.setData(
+            j.kline.map((e) => ({ time: e.Date / 1000, value: e.LT }))
+          );
+          utLine.setData(
+            j.kline.map((e) => ({ time: e.Date / 1000, value: e.UT }))
+          );
+
+          const markers = [];
+          const seenSignals = new Set();
+
+          (j.signal || []).forEach((s) => {
+            const signalKey = s.signal.replace("*", "") + "-" + s.index;
+            if (!seenSignals.has(signalKey)) {
+              let color, shape;
+              if (s.signal.includes("*")) {
+                color = s.signal.includes("BUY") ? "lightgreen" : "lightcoral";
+                shape = s.signal.includes("BUY") ? "arrowUp" : "arrowDown";
+              } else {
+                color = s.signal === "BUY" ? "green" : "red";
+                shape = s.signal === "BUY" ? "arrowUp" : "arrowDown";
+              }
+              markers.push({
+                time: j.kline[s.index].Date / 1000,
+                position: s.signal.includes("BUY") ? "belowBar" : "aboveBar",
+                color: color,
+                shape: shape,
+                text: s.signal,
+              });
+              seenSignals.add(signalKey);
+            }
+          });
+          candleSeries.setMarkers(markers);
+
+          const last = j.kline.at(-1);
+          if (last) {
+            const nextClose = (last.Date / 1000 + intToSec(interval)) * 1000;
+            startCountdown(nextClose, last.Close);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      async function loadPairs() {
+        try {
+          const pairs = await getPairs();
+          const datalist = document.getElementById("pair-suggestions");
+          datalist.innerHTML = "";
+          pairs.forEach((pair) => {
+            const option = document.createElement("option");
+            option.value = pair;
+            datalist.appendChild(option);
+          });
+
+          // Set default pair ke BTCUSDT
+          pairSel.value = "BTCUSDT";
+          loadChartData(); // Load chart dengan pair default
+        } catch (error) {
+          console.error("Error loading pairs:", error);
+        }
+      }
+
+      loadPairs();
+      socket.addEventListener("open", () => console.log("WS connected"));
+      socket.addEventListener("message", (ev) => {
+        try {
+          const d = JSON.parse(ev.data);
+          if (d.pair !== pairSel.value || d.interval !== intSel.value) return;
+          const newC = {
+            time: d.closeTime / 1000,
+            open: +d.open,
+            high: +d.high,
+            low: +d.low,
+            close: +d.close,
+          };
+          const last = candles.at(-1);
+          if (last && last.time === newC.time) {
+            candles[candles.length - 1] = newC;
+          } else {
+            candles.push(newC);
+          }
+          candleSeries.setData(candles);
+          startCountdown(d.closeTime, newC.close);
+        } catch (e) {
+          console.error("WS parse", e);
+        }
+      });
+
+      const pairInput = document.getElementById("pair-select");
+      const pairButton = document.getElementById("pair-button");
+
+      // Event listener untuk tombol pilih
+      pairButton.addEventListener("click", loadChartData);
+
+      // Hapus event listener input langsung
+      pairInput.removeEventListener("input", loadChartData);
+
+      intSel.addEventListener("change", loadChartData);
+      window.addEventListener("resize", () =>
+        chart.applyOptions({
+          width: window.innerWidth,
+          height: window.innerHeight,
+        })
+      );
+
+      initChart();
+      loadChartData();
+
+      // Fungsi untuk toggle hide/show menu
+      const toggleMenuButton = document.getElementById("toggle-menu");
+      const floatingMenu = document.getElementById("floating-menu");
+      const activePair = document.getElementById("active-pair");
+
+      toggleMenuButton.addEventListener("click", () => {
+        if (floatingMenu.classList.contains("translate-y-[110%]")) {
+          floatingMenu.classList.remove("translate-y-[110%]");
+          floatingMenu.classList.add("translate-y-0");
+          // Posisikan menu floating di sebelah kiri pair aktif
+          floatingMenu.style.left = "1.5rem";
+          floatingMenu.style.top = "1.5rem";
+        } else {
+          floatingMenu.classList.remove("translate-y-0");
+          floatingMenu.classList.add("translate-y-[110%]");
+          // Posisikan menu floating di sebelah kiri pair aktif ketika ditutup
+          floatingMenu.style.left = "1.5rem";
+          floatingMenu.style.top = "1.5rem";
+        }
+      });
+      const menuContent = document.getElementById("menu-content");
+      const menuHideIcon = document.getElementById("menu-hide-icon");
+      const menuShowIcon = document.getElementById("menu-show-icon");
+
+      toggleMenuButton.addEventListener("click", () => {
+        if (menuContent.classList.contains("hidden")) {
+          menuContent.classList.remove("hidden");
+          menuHideIcon.classList.remove("hidden");
+          menuShowIcon.classList.add("hidden");
+        } else {
+          menuContent.classList.add("hidden");
+          menuHideIcon.classList.add("hidden");
+          menuShowIcon.classList.remove("hidden");
+        }
+      });
+      // Fungsi untuk toggle hide/show info
+      const toggleInfoButton = document.getElementById("toggle-info");
+      const infoContent = document.getElementById("info-content");
+      const hideIcon = document.getElementById("hide-icon");
+      const showIcon = document.getElementById("show-icon");
+
+      toggleInfoButton.addEventListener("click", () => {
+        if (infoContent.classList.contains("hidden")) {
+          infoContent.classList.remove("hidden");
+          hideIcon.classList.remove("hidden");
+          showIcon.classList.add("hidden");
+        } else {
+          infoContent.classList.add("hidden");
+          hideIcon.classList.add("hidden");
+          showIcon.classList.remove("hidden");
+        }
+      });
+    </script>
+  </body>
+</html>
+
+.translate-y-0 { transform: translateY(0); } .translate-y-[110%] { transform:
+translateY(110%); }
